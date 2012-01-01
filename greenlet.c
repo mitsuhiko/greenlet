@@ -794,7 +794,11 @@ static int green_clear(PyGreenlet* self)
 		/* When tp_clear is called we are first on the unreachable list,
 		   so by following the gc_prev link we may first the list itself */
 		PyGC_Head *list = (((PyGC_Head*)self) - 1)->gc.gc_prev;
-		PyGC_Head *sentinel = (PyGC_Head*)PyMem_Malloc(sizeof(PyGC_Head));
+		PyGC_Head *flist = list + 1;
+
+		PyGC_Head *sentinel = (PyGC_Head*)PyMem_Malloc(sizeof(PyGC_Head[2]));
+		PyGC_Head *fsentinel = sentinel + 1;
+
 		/* XXX: if sentinel allocation fails there's
 		   no way to make switching safe, so we don't */
 		if (sentinel != NULL) {
@@ -803,11 +807,22 @@ static int green_clear(PyGreenlet* self)
 			sentinel->gc.gc_prev = list->gc.gc_prev;
 			list->gc.gc_prev->gc.gc_next = sentinel;
 			list->gc.gc_prev = sentinel;
+
+			fsentinel->gc.gc_next = flist;
+			fsentinel->gc.gc_prev = flist->gc.gc_prev;
+			flist->gc.gc_prev->gc.gc_next = fsentinel;
+			flist->gc.gc_prev = fsentinel;
+
+
 			/* Attempt to kill greenlet */
 			result = kill_greenlet(self);
 			/* Remove sentinel from the list */
 			sentinel->gc.gc_prev->gc.gc_next = sentinel->gc.gc_next;
 			sentinel->gc.gc_next->gc.gc_prev = sentinel->gc.gc_prev;
+
+			fsentinel->gc.gc_prev->gc.gc_next = fsentinel->gc.gc_next;
+			fsentinel->gc.gc_next->gc.gc_prev = fsentinel->gc.gc_prev;
+
 			/* Free the sentinel */
 			PyMem_Free(sentinel);
 		}
